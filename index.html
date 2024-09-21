@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Drawing Board</title>
+    <!-- Include jsPDF from CDN for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            background-color: #f7f7f7;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+        }
+
+        #toolbar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 15px;
+        }
+
+        .btn, .color-picker, .select {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .btn {
+            background-color: #007BFF;
+            color: #fff;
+            transition: background-color 0.3s;
+        }
+
+        .btn:hover {
+            background-color: #0056b3;
+        }
+
+        .color-picker {
+            cursor: pointer;
+            width: 50px;
+            height: 40px;
+        }
+
+        .select {
+            background-color: #ffffff;
+            border: 1px solid #ccc;
+            padding: 8px 10px;
+            font-size: 16px;
+        }
+
+        #canvas-container {
+            position: relative;
+            border: 2px solid #333;
+            background-color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        canvas {
+            display: block;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            width: 95vw;
+            height: 77vh;
+        }
+
+        #background-input {
+            display: none;
+        }
+
+        /* Slide Indicators */
+        #slides-indicators {
+            display: flex;
+            gap: 5px;
+        }
+
+        .slide-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #ccc;
+            cursor: pointer;
+        }
+
+        .active-dot {
+            background-color: #007BFF;
+        }
+
+        /* Text Input and Size Controller */
+        #text-tool {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        #text-input {
+            width: 200px;
+            padding: 8px 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        #text-size {
+            width: 150px;
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <!-- Color Picker -->
+        <input type="color" id="color-picker" class="color-picker" title="Choose color">
+        
+        <!-- Brush Size -->
+        <select id="brush-size" class="select" title="Brush Size">
+            <option value="2">2px</option>
+            <option value="4">4px</option>
+            <option value="6">6px</option>
+            <option value="8">8px</option>
+            <option value="10">10px</option>
+        </select>
+        
+        <!-- Shape Selector -->
+        <select id="shape-selector" class="select" title="Select Shape">
+            <option value="freehand">Freehand</option>
+            <option value="line">Line</option>
+            <option value="rectangle">Rectangle</option>
+            <option value="circle">Circle</option>
+            <option value="text">Text</option>
+        </select>
+        
+        <!-- Background Color Picker -->
+        <input type="color" id="bg-color-picker" class="color-picker" title="Background Color">
+        
+        <!-- Background Image Upload -->
+        <button id="bg-image-btn" class="btn">Set Background Image</button>
+        <input type="file" id="background-input" accept="image/*">
+        
+        <!-- Slide Controls -->
+        <button id="add-slide" class="btn">Add Slide</button>
+        <button id="prev-slide" class="btn">Previous Slide</button>
+        <button id="next-slide" class="btn">Next Slide</button>
+        
+        <!-- Clear Canvas -->
+        <button id="clear-board" class="btn">Clear</button>
+        
+        <!-- Undo and Redo -->
+        <button id="undo" class="btn">Undo</button>
+        <button id="redo" class="btn">Redo</button>
+        
+        <!-- Save as PDF -->
+        <button id="save-pdf" class="btn">Save as PDF</button>
+    </div>
+
+    <div id="text-tool">
+        <input type="text" id="text-input" placeholder="Enter text here">
+        <label for="text-size">Text Size</label>
+        <input type="range" id="text-size" min="10" max="100" value="30">
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="drawing-board" width="1200" height="800"></canvas>
+    </div>
+
+    <div id="slides-indicators"></div>
+
+    <script>
+        const { jsPDF } = window.jspdf;
+
+        const canvas = document.getElementById('drawing-board');
+        const ctx = canvas.getContext('2d');
+        const colorPicker = document.getElementById('color-picker');
+        const bgColorPicker = document.getElementById('bg-color-picker');
+        const brushSize = document.getElementById('brush-size');
+        const shapeSelector = document.getElementById('shape-selector');
+        const clearButton = document.getElementById('clear-board');
+        const bgImageBtn = document.getElementById('bg-image-btn');
+        const backgroundInput = document.getElementById('background-input');
+        const addSlideBtn = document.getElementById('add-slide');
+        const prevSlideBtn = document.getElementById('prev-slide');
+        const nextSlideBtn = document.getElementById('next-slide');
+        const savePdfBtn = document.getElementById('save-pdf');
+        const undoButton = document.getElementById('undo');
+        const redoButton = document.getElementById('redo');
+        const slidesIndicators = document.getElementById('slides-indicators');
+        const textTool = document.getElementById('text-tool');
+        const textInput = document.getElementById('text-input');
+        const textSize = document.getElementById('text-size');
+
+        let isDrawing = false;
+        let startX = 0;
+        let startY = 0;
+        let currentShape = 'freehand';
+        let currentColor = '#000000';
+        let currentBrushSize = 2;
+        let backgroundColor = '#ffffff';
+        let backgroundImage = null;
+        let isTextMode = false;
+        let currentTextSize = 30;
+
+        // Slides Management
+        let slides = [];
+        let currentSlide = 0;
+
+        // Undo and Redo Management
+        let undoStack = [];
+        let redoStack = [];
+
+        // Text Management
+        let draggableText = null;
+
+        // Initialize first slide
+        addSlide();
+
+        function addSlide() {
+            slides.push({
+                drawings: [], // To store drawing actions
+                backgroundColor: backgroundColor,
+                backgroundImage: backgroundImage
+            });
+            currentSlide = slides.length - 1;
+            updateSlidesIndicators();
+            renderSlide();
+        }
+
+        function updateSlidesIndicators() {
+            slidesIndicators.innerHTML = '';
+            slides.forEach((_, index) => {
+                const dot = document.createElement('div');
+                dot.classList.add('slide-dot');
+                if (index === currentSlide) {
+                    dot.classList.add('active-dot');
+                }
+                dot.addEventListener('click', () => {
+                    currentSlide = index;
+                    renderSlide();
+                    updateSlidesIndicators();
+                });
+                slidesIndicators.appendChild(dot);
+            });
+        }
+
+        function renderSlide() {
+            const slide = slides[currentSlide];
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Set background
+            if (slide.backgroundImage) {
+                const img = new Image();
+                img.src = slide.backgroundImage;
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    redrawDrawings();
+                };
+            } else {
+                ctx.fillStyle = slide.backgroundColor;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                redrawDrawings();
+            }
+        }
+
+        function redrawDrawings() {
+            const slide = slides[currentSlide];
+            slide.drawings.forEach(action => {
+                ctx.strokeStyle = action.color;
+                ctx.lineWidth = action.size;
+                ctx.lineCap = 'round';
+
+                if (action.type === 'freehand') {
+                    ctx.beginPath();
+                    ctx.moveTo(action.from.x, action.from.y);
+                    ctx.lineTo(action.to.x, action.to.y);
+                    ctx.stroke();
+                } else if (action.type === 'line') {
+                    ctx.beginPath();
+                    ctx.moveTo(action.from.x, action.from.y);
+                    ctx.lineTo(action.to.x, action.to.y);
+                    ctx.stroke();
+                } else if (action.type === 'rectangle') {
+                    ctx.strokeRect(action.from.x, action.from.y, action.width, action.height);
+                } else if (action.type === 'circle') {
+                    ctx.beginPath();
+                    ctx.arc(action.from.x, action.from.y, action.radius, 0, 2 * Math.PI);
+                    ctx.stroke();
+                } else if (action.type === 'text') {
+                    ctx.font = `${action.size}px Arial`;
+                    ctx.fillStyle = action.color;
+                    ctx.fillText(action.text, action.x, action.y);
+                }
+            });
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            const mouseX = e.offsetX;
+            const mouseY = e.offsetY;
+            isDrawing = true;
+            startX = mouseX;
+            startY = mouseY;
+
+            if (currentShape === 'text') {
+                draggableText = {
+                    text: textInput.value,
+                    x: mouseX,
+                    y: mouseY,
+                    color: currentColor,
+                    size: currentTextSize
+                };
+                ctx.font = `${currentTextSize}px Arial`;
+                ctx.fillStyle = currentColor;
+                ctx.fillText(draggableText.text, mouseX, mouseY);
+                slides[currentSlide].drawings.push({
+                    ...draggableText,
+                    type: 'text'
+                });
+                isDrawing = false;
+                draggableText = null;
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDrawing && currentShape !== 'text') {
+                const mouseX = e.offsetX;
+                const mouseY = e.offsetY;
+
+                if (currentShape === 'freehand') {
+                    ctx.strokeStyle = currentColor;
+                    ctx.lineWidth = currentBrushSize;
+                    ctx.lineCap = 'round';
+
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(mouseX, mouseY);
+                    ctx.stroke();
+
+                    slides[currentSlide].drawings.push({
+                        type: 'freehand',
+                        color: currentColor,
+                        size: currentBrushSize,
+                        from: { x: startX, y: startY },
+                        to: { x: mouseX, y: mouseY }
+                    });
+
+                    [startX, startY] = [mouseX, mouseY];
+                }
+            }
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            isDrawing = false;
+            const mouseX = e.offsetX;
+            const mouseY = e.offsetY;
+
+            if (currentShape === 'line') {
+                ctx.strokeStyle = currentColor;
+                ctx.lineWidth = currentBrushSize;
+                ctx.lineCap = 'round';
+
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(mouseX, mouseY);
+                ctx.stroke();
+
+                slides[currentSlide].drawings.push({
+                    type: 'line',
+                    color: currentColor,
+                    size: currentBrushSize,
+                    from: { x: startX, y: startY },
+                    to: { x: mouseX, y: mouseY }
+                });
+            } else if (currentShape === 'rectangle') {
+                const width = mouseX - startX;
+                const height = mouseY - startY;
+
+                ctx.strokeStyle = currentColor;
+                ctx.lineWidth = currentBrushSize;
+                ctx.strokeRect(startX, startY, width, height);
+
+                slides[currentSlide].drawings.push({
+                    type: 'rectangle',
+                    color: currentColor,
+                    size: currentBrushSize,
+                    from: { x: startX, y: startY },
+                    width: width,
+                    height: height
+                });
+            } else if (currentShape === 'circle') {
+                const radius = Math.sqrt(Math.pow(mouseX - startX, 2) + Math.pow(mouseY - startY, 2));
+
+                ctx.strokeStyle = currentColor;
+                ctx.lineWidth = currentBrushSize;
+                ctx.beginPath();
+                ctx.arc(startX, startY, radius, 0, 2 * Math.PI);
+                ctx.stroke();
+
+                slides[currentSlide].drawings.push({
+                    type: 'circle',
+                    color: currentColor,
+                    size: currentBrushSize,
+                    from: { x: startX, y: startY },
+                    radius: radius
+                });
+            }
+        });
+
+        clearButton.addEventListener('click', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            slides[currentSlide].drawings = [];
+        });
+
+        colorPicker.addEventListener('input', (e) => {
+            currentColor = e.target.value;
+        });
+
+        bgColorPicker.addEventListener('input', (e) => {
+            backgroundColor = e.target.value;
+            slides[currentSlide].backgroundColor = backgroundColor;
+            renderSlide();
+        });
+
+        brushSize.addEventListener('change', (e) => {
+            currentBrushSize = parseInt(e.target.value, 10);
+        });
+
+        shapeSelector.addEventListener('change', (e) => {
+            currentShape = e.target.value;
+        });
+
+        bgImageBtn.addEventListener('click', () => {
+            backgroundInput.click();
+        });
+
+        backgroundInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    backgroundImage = e.target.result;
+                    slides[currentSlide].backgroundImage = backgroundImage;
+                    renderSlide();
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        addSlideBtn.addEventListener('click', () => {
+            addSlide();
+        });
+
+        prevSlideBtn.addEventListener('click', () => {
+            if (currentSlide > 0) {
+                currentSlide--;
+                renderSlide();
+                updateSlidesIndicators();
+            }
+        });
+
+        nextSlideBtn.addEventListener('click', () => {
+            if (currentSlide < slides.length - 1) {
+                currentSlide++;
+                renderSlide();
+                updateSlidesIndicators();
+            }
+        });
+
+        savePdfBtn.addEventListener('click', () => {
+            const pdf = new jsPDF('landscape');
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+
+            slides.forEach((slide, index) => {
+                if (index > 0) pdf.addPage();
+
+                // Set background for the slide
+                if (slide.backgroundImage) {
+                    const img = new Image();
+                    img.src = slide.backgroundImage;
+                    img.onload = () => {
+                        tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                        drawSlideContent(index);
+                    };
+                } else {
+                    tempCtx.fillStyle = slide.backgroundColor;
+                    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                    drawSlideContent(index);
+                }
+            });
+
+            function drawSlideContent(index) {
+                slides[index].drawings.forEach(action => {
+                    tempCtx.strokeStyle = action.color;
+                    tempCtx.lineWidth = action.size;
+                    tempCtx.lineCap = 'round';
+
+                    if (action.type === 'freehand') {
+                        tempCtx.beginPath();
+                        tempCtx.moveTo(action.from.x, action.from.y);
+                        tempCtx.lineTo(action.to.x, action.to.y);
+                        tempCtx.stroke();
+                    } else if (action.type === 'line') {
+                        tempCtx.beginPath();
+                        tempCtx.moveTo(action.from.x, action.from.y);
+                        tempCtx.lineTo(action.to.x, action.to.y);
+                        tempCtx.stroke();
+                    } else if (action.type === 'rectangle') {
+                        tempCtx.strokeRect(action.from.x, action.from.y, action.width, action.height);
+                    } else if (action.type === 'circle') {
+                        tempCtx.beginPath();
+                        tempCtx.arc(action.from.x, action.from.y, action.radius, 0, 2 * Math.PI);
+                        tempCtx.stroke();
+                    } else if (action.type === 'text') {
+                        tempCtx.font = `${action.size}px Arial`;
+                        tempCtx.fillStyle = action.color;
+                        tempCtx.fillText(action.text, action.x, action.y);
+                    }
+                });
+
+                pdf.addImage(tempCanvas.toDataURL('image/png'), 'PNG', 0, 0, 297, 210);
+                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+            }
+
+            pdf.save('drawing-board.pdf');
+        });
+
+        undoButton.addEventListener('click', () => {
+            if (undoStack.length > 0) {
+                redoStack.push(slides[currentSlide].drawings);
+                slides[currentSlide].drawings = undoStack.pop();
+                renderSlide();
+            }
+        });
+
+        redoButton.addEventListener('click', () => {
+            if (redoStack.length > 0) {
+                undoStack.push(slides[currentSlide].drawings);
+                slides[currentSlide].drawings = redoStack.pop();
+                renderSlide();
+            }
+        });
+
+        textSize.addEventListener('input', (e) => {
+            currentTextSize = parseInt(e.target.value, 10);
+        });
+    </script>
+</body>
+</html>
+
+
